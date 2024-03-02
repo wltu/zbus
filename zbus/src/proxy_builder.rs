@@ -30,6 +30,7 @@ pub struct ProxyBuilder<'a, T = ()> {
     proxy_type: PhantomData<T>,
     cache: CacheProperties,
     uncached_properties: Option<HashSet<Str<'a>>>,
+    receives_broadcast_signal: bool,
 }
 
 impl<'a, T> Clone for ProxyBuilder<'a, T> {
@@ -42,6 +43,7 @@ impl<'a, T> Clone for ProxyBuilder<'a, T> {
             cache: self.cache,
             uncached_properties: self.uncached_properties.clone(),
             proxy_type: PhantomData,
+            receives_broadcast_signal: self.receives_broadcast_signal.clone(),
         }
     }
 }
@@ -60,6 +62,7 @@ impl<'a, T> ProxyBuilder<'a, T> {
             cache: CacheProperties::default(),
             uncached_properties: None,
             proxy_type: PhantomData,
+            receives_broadcast_signal: false,
         }
     }
 }
@@ -111,6 +114,12 @@ impl<'a, T> ProxyBuilder<'a, T> {
         self
     }
 
+    /// Enable receives_broadcast_signal.
+    pub fn receives_broadcast_signal(mut self) -> Self {
+        self.receives_broadcast_signal = true;
+        self
+    }
+
     pub(crate) fn build_internal(self) -> Result<Proxy<'a>> {
         let conn = self.conn;
         let destination = self
@@ -129,6 +138,7 @@ impl<'a, T> ProxyBuilder<'a, T> {
                 interface,
                 cache,
                 uncached_properties,
+                self.receives_broadcast_signal,
             )),
         })
     }
@@ -175,6 +185,7 @@ where
             cache: CacheProperties::default(),
             uncached_properties: None,
             proxy_type: PhantomData,
+            receives_broadcast_signal: false,
         }
     }
 }
