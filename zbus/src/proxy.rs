@@ -90,6 +90,9 @@ pub(crate) struct ProxyInner<'a> {
     /// Set of properties which do not get cached, by name.
     /// This overrides proxy-level caching behavior.
     uncached_properties: HashSet<Str<'a>>,
+
+    //// Create Signal Stream with out sender and path filter.
+    receives_broadcast_signal: bool,
 }
 
 impl Drop for ProxyInnerStatic {
@@ -472,6 +475,7 @@ impl<'a> ProxyInner<'a> {
         interface: InterfaceName<'a>,
         cache: CacheProperties,
         uncached_properties: HashSet<Str<'a>>,
+        receives_broadcast_signal: bool,
     ) -> Self {
         let property_cache = match cache {
             CacheProperties::Yes | CacheProperties::Lazily => Some(OnceCell::new()),
@@ -487,6 +491,7 @@ impl<'a> ProxyInner<'a> {
             interface,
             property_cache,
             uncached_properties,
+            receives_broadcast_signal,
         }
     }
 
@@ -614,6 +619,10 @@ impl<'a> Proxy<'a> {
     /// Get a reference to the interface.
     pub fn interface(&self) -> &InterfaceName<'_> {
         &self.inner.interface
+    }
+
+    pub fn receives_broadcast_signal(&self) -> bool {
+        self.inner.receives_broadcast_signal
     }
 
     /// Introspect the associated object, and return the XML description.
@@ -1089,6 +1098,7 @@ pub struct SignalStream<'a> {
     stream: Join<MessageStream, Option<MessageStream>>,
     src_unique_name: Option<UniqueName<'static>>,
     signal_name: Option<MemberName<'a>>,
+    receives_broadcast_signal: bool,
 }
 
 impl<'a> SignalStream<'a> {
@@ -1102,11 +1112,18 @@ impl<'a> SignalStream<'a> {
         signal_name: Option<MemberName<'a>>,
         args: &[(u8, &str)],
     ) -> Result<SignalStream<'a>> {
-        let mut rule_builder = MatchRule::builder()
-            .msg_type(MessageType::Signal)
-            .sender(proxy.destination())?
-            .path(proxy.path())?
-            .interface(proxy.interface())?;
+        let mut rule_builder = if proxy.receives_broadcast_signal() {
+            MatchRule::builder()
+                .msg_type(MessageType::Signal)
+                .interface(proxy.interface())?
+        } else {
+            MatchRule::builder()
+                .msg_type(MessageType::Signal)
+                .sender(proxy.destination())?
+                .path(proxy.path())?
+                .interface(proxy.interface())?
+        };
+
         if let Some(name) = &signal_name {
             rule_builder = rule_builder.member(name)?;
         }
@@ -1227,10 +1244,15 @@ impl<'a> SignalStream<'a> {
             stream,
             src_unique_name,
             signal_name,
+            receives_broadcast_signal: proxy.receives_broadcast_signal(),
         })
     }
 
     fn filter(&mut self, msg: &Arc<Message>) -> Result<bool> {
+        if self.receives_broadcast_signal {
+            return Ok(true);
+        }
+
         let header = msg.header()?;
         let sender = header.sender()?;
         if sender == self.src_unique_name.as_ref() {
